@@ -9,13 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- **Pressure-aware stylus strokes.** Android stylus contact now produces immediate mouse down/drag/up strokes on the Mac, bypassing touch prediction and carrying normalized pen pressure. A capability handshake keeps mixed old/new app versions on the existing touch path.
-
 ### Planned
 - mDNS auto-discovery for wireless mode
 - Audio streaming
 - Multi-touch gestures
+
+---
+
+<a id="0.12.0"></a>
+## [0.12.0] - 2026-08-28
+
+Pressure-aware Android stylus input. Pen contact is now preserved as a continuous stroke from the tablet to macOS, including normalized pressure, instead of being flattened into predicted touch movement. The protocol remains compatible with older Side Screen versions through an opt-in capability handshake.
+
+### Added
+- **Continuous stylus strokes.** Android stylus contact now maps directly to macOS mouse down, drag, and up events, so drawing applications receive one coherent stroke rather than disconnected touch points.
+- **Pressure forwarding.** The Android client sends the tablet's normalized pen pressure with every stroke event, and the Mac host attaches it to the generated mouse event for pressure-aware drawing applications.
+- **Pen capability negotiation.** The new pen message path is enabled only after both clients confirm support. Mixed old/new installations safely retain the existing touch behavior instead of misreading the stream.
+
+### Notes
+- Stylus events bypass touch prediction and smoothing so the original pen path and pressure samples are preserved.
+- Hover, tilt, and barrel-button input are not included in this release.
+- Verified on a Samsung SM-T970 tablet with five physical S Pen strokes; observed pressure varied continuously from approximately 0.020 to 0.947 with complete down/move/up sequences.
+
+### Installation
+- **macOS (manual)**: Open `SideScreen-0.12.0-mac-universal.dmg`, drag SideScreen to Applications. If Gatekeeper says "damaged"/"cannot be opened": `sudo xattr -cr /Applications/SideScreen.app`. Requires macOS 13 (Ventura) or later.
+- **Android**: Install `SideScreen-0.12.0-android.apk` (enable "Unknown sources" if needed).
+- Update both the macOS host and Android client to enable pressure-aware stylus input.
 
 ---
 
