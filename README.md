@@ -77,6 +77,10 @@ Hardware-accelerated H.265 encoding on Mac and decoding on Android. Async pipeli
 
 Use your tablet's touchscreen to interact with macOS. Touch prediction compensates for network latency, making taps and drags feel natural.
 
+### Pressure-Aware Stylus Strokes
+
+Draw with an Android stylus as a continuous Mac stroke. Pen contact maps directly to mouse down/drag/up events without touch smoothing, while normalized pressure is forwarded to drawing apps that read macOS mouse pressure. Both the Mac host and Android client must support the pen capability; mixed versions safely fall back to normal touch input.
+
 ### HiDPI (Retina) Support
 
 Enable HiDPI mode to render at 2× resolution internally — text and icons are sharp at any logical resolution, just like a MacBook Retina display. Perfect for users with 2K/4K tablets who want a readable workspace without sacrificing sharpness.

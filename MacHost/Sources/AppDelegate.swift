@@ -680,6 +680,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.handleTouch(x: x, y: y, action: action, pointerCount: pointerCount, x2: x2, y2: y2)
             }
 
+            streamingServer?.onPenEvent = { [weak self] event in
+                self?.handlePen(event)
+            }
+
             streamingServer?.onStats = { [weak self] fps, mbps in
                 let captured = self
                 Task { @MainActor in
@@ -833,6 +837,56 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             handleOneFingerTouch(at: p1, action: action)
         }
+    }
+
+    // MARK: - Pressure Stroke Entry Point
+
+    func handlePen(_ event: PenEvent) {
+        guard settings.touchEnabled else { return }
+
+        if !AXIsProcessTrusted() {
+            if !accessibilityWarningShown {
+                accessibilityWarningShown = true
+                print("⚠️  Accessibility not granted - pen ignored")
+                Task { @MainActor in
+                    settings.hasAccessibilityPermission = false
+                }
+            }
+            return
+        }
+
+        guard let displayID = virtualDisplayManager?.displayID else { return }
+        let bounds = CGDisplayBounds(displayID)
+        let point = CGPoint(
+            x: bounds.origin.x + CGFloat(event.x) * bounds.width,
+            y: bounds.origin.y + CGFloat(event.y) * bounds.height
+        )
+
+        switch event.action {
+        case .down:
+            postPenMouse(.leftMouseDown, at: point, pressure: event.pressure)
+        case .move:
+            postPenMouse(.leftMouseDragged, at: point, pressure: event.pressure)
+        case .up:
+            postPenMouse(.leftMouseUp, at: point, pressure: nil)
+        }
+    }
+
+    private func postPenMouse(_ type: CGEventType, at point: CGPoint, pressure: Float?) {
+        guard let event = CGEvent(
+            mouseEventSource: eventSource,
+            mouseType: type,
+            mouseCursorPosition: point,
+            mouseButton: .left
+        ) else { return }
+
+        if let pressure {
+            event.setDoubleValueField(.mouseEventPressure, value: Double(pressure))
+        }
+        if type == .leftMouseDown {
+            event.setIntegerValueField(.mouseEventClickState, value: 1)
+        }
+        event.post(tap: .cghidEventTap)
     }
 
     // MARK: - 1-Finger Gesture State Machine

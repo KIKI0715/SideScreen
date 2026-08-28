@@ -9,11 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Pressure-aware stylus strokes.** Android stylus contact now produces immediate mouse down/drag/up strokes on the Mac, bypassing touch prediction and carrying normalized pen pressure. A capability handshake keeps mixed old/new app versions on the existing touch path.
+
 ### Planned
 - mDNS auto-discovery for wireless mode
 - Audio streaming
 - Multi-touch gestures
-- Stylus/pen support
 
 ---
 

@@ -1467,6 +1467,13 @@ class MainActivity : AppCompatActivity() {
         view: View,
         event: MotionEvent,
     ) {
+        if (streamClient?.penSupportedByHost == true &&
+            event.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS
+        ) {
+            handlePen(view, event)
+            return
+        }
+
         val rawX = event.x / view.width.toFloat()
         val rawY = event.y / view.height.toFloat()
         val x = if (displayFlipHorizontal) 1f - rawX else rawX
@@ -1517,6 +1524,25 @@ class MainActivity : AppCompatActivity() {
                 streamClient?.sendTouch(x, y, 2, 1)
             }
         }
+    }
+
+    private fun handlePen(
+        view: View,
+        event: MotionEvent,
+    ) {
+        val rawX = event.x / view.width.toFloat()
+        val rawY = event.y / view.height.toFloat()
+        val x = if (displayFlipHorizontal) 1f - rawX else rawX
+        val y = if (displayFlipVertical) 1f - rawY else rawY
+        val action =
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> PenProtocol.ACTION_DOWN
+                MotionEvent.ACTION_MOVE -> PenProtocol.ACTION_MOVE
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> PenProtocol.ACTION_UP
+                else -> return
+            }
+
+        streamClient?.sendPen(action, x, y, event.pressure)
     }
 
     private fun applyRotation(

@@ -22,6 +22,11 @@ private enum WireMessage {
     /// #41). Every payload byte has the high bit set, so old hosts that
     /// consume unknown types byte-by-byte skip the payload harmlessly.
     static let clientDecoderLimits: UInt8 = 11
+    /// Payload-free, bidirectional opt-in for pressure-aware stylus strokes.
+    /// The host acknowledges only clients that sent this message first.
+    static let penCapability = PenProtocol.capabilityMessage
+    /// Client→server fixed-size pressure stroke packet.
+    static let penEvent = PenProtocol.eventMessage
 }
 
 private extension NWEndpoint {
@@ -52,6 +57,7 @@ class StreamingServer {
     var onCodecNegotiated: ((StreamCodec) -> Void)?
     // Touch callback: (x1, y1, action, pointerCount, x2, y2)
     var onTouchEvent: ((Float, Float, Int, Int, Float, Float) -> Void)?
+    var onPenEvent: ((PenEvent) -> Void)?
     var onStats: ((Double, Double) -> Void)?
     var onKeyframeRequested: ((Bool) -> Void)?
     // Whether host wants to receive touch events from client. Ping/pong is
@@ -120,6 +126,7 @@ class StreamingServer {
     private var waitingForSyncFrame = false
     private var clientSupportsFrameMetadata = false
     private var clientIsAvcOnly = false
+    private var clientSupportsPen = false
     /// Max decode size reported by the connected client (issue #41).
     private(set) var clientDecodeLimits: (width: Int, height: Int)?
     private var inputBuffer = Data()
@@ -174,6 +181,7 @@ class StreamingServer {
         connectionReady = false
         clientSupportsFrameMetadata = false
         clientIsAvcOnly = false
+        clientSupportsPen = false
         clientDecodeLimits = nil
         waitingForSyncFrame = true
         inputBuffer.removeAll(keepingCapacity: true)
@@ -242,6 +250,14 @@ class StreamingServer {
         // encoder AND updates displayWidth/Height (clamped for H.264) so the
         // display config below carries decoder-safe dimensions.
         onCodecNegotiated?(codec)
+
+        if clientSupportsPen {
+            conn.send(
+                content: Data([WireMessage.penCapability]),
+                completion: .contentProcessed { _ in }
+            )
+            debugLog("Confirmed pressure-stroke support")
+        }
 
         debugLog("Client connected - sending display config first")
         sendDisplaySize()
@@ -562,6 +578,24 @@ class StreamingServer {
                 if w >= 256 && h >= 256 {
                     clientDecodeLimits = (w, h)
                     debugLog("Client decoder limit: \(w)x\(h)")
+                }
+
+            case WireMessage.penCapability:
+                consumeInputBytes(1)
+                clientSupportsPen = true
+                debugLog("Client supports pressure strokes")
+
+            case WireMessage.penEvent:
+                guard inputBuffer.count >= PenProtocol.packetSize else { return }
+
+                let message = Data(inputBuffer.prefix(PenProtocol.packetSize))
+                consumeInputBytes(PenProtocol.packetSize)
+                guard touchEnabled, clientSupportsPen,
+                      let event = PenProtocol.decode(message) else {
+                    continue
+                }
+                DispatchQueue.main.async {
+                    self.onPenEvent?(event)
                 }
 
             default:

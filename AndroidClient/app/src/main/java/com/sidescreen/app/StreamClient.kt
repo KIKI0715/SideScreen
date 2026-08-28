@@ -46,6 +46,10 @@ class StreamClient(
     @Volatile var codecNegotiated = false
         private set
 
+    /** True only after a capability-aware Mac confirms pressure-stroke support. */
+    @Volatile var penSupportedByHost = false
+        private set
+
     private var bytesReceived = 0L
     private var framesReceived = 0L
     private var diagFrameCount = 0L
@@ -126,8 +130,10 @@ class StreamClient(
                 outputStream = java.io.DataOutputStream(socket?.getOutputStream())
                 streamCodecIsHevc = true
                 codecNegotiated = false
+                penSupportedByHost = false
                 advertiseAvcOnlyIfNeeded() // MUST precede type 8: type 8 can trigger the server's early protocol finish
                 advertiseDecoderLimits() // Also before type 8, for the same reason
+                advertisePenSupport()
                 advertiseFrameMetadataSupport()
                 isConnected = true
                 lastKeyframeReceivedNs = 0L
@@ -351,8 +357,10 @@ class StreamClient(
                 outputStream = java.io.DataOutputStream(s.getOutputStream())
                 streamCodecIsHevc = true
                 codecNegotiated = false
+                penSupportedByHost = false
                 advertiseAvcOnlyIfNeeded() // MUST precede type 8: type 8 can trigger the server's early protocol finish
                 advertiseDecoderLimits() // Also before type 8, for the same reason
+                advertisePenSupport()
                 advertiseFrameMetadataSupport()
                 isConnected = true
                 diagLog("Wireless connected to $host:$port")
@@ -412,6 +420,14 @@ class StreamClient(
         }
     }
 
+    private fun advertisePenSupport() {
+        outputStream?.let { out ->
+            out.write(PenProtocol.capabilityAdvertisement())
+            out.flush()
+            diagLog("Advertised pressure-stroke support")
+        }
+    }
+
     private suspend fun receiveData() =
         withContext(Dispatchers.IO) {
             val input = inputStream ?: return@withContext
@@ -455,6 +471,11 @@ class StreamClient(
                             codecNegotiated = true
                             diagLog("Server selected codec: ${if (streamCodecIsHevc) "HEVC" else "H.264"}")
                             onCodecSelected?.invoke(streamCodecIsHevc)
+                        }
+
+                        PenProtocol.MESSAGE_PEN_CAPABILITY -> {
+                            penSupportedByHost = true
+                            diagLog("Host confirmed pressure-stroke support")
                         }
 
                         else -> {
@@ -501,6 +522,25 @@ class StreamClient(
                     }
                     buffer.putInt(action)
                     out.write(buffer.array())
+                    out.flush()
+                }
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    fun sendPen(
+        action: Int,
+        x: Float,
+        y: Float,
+        pressure: Float,
+    ) {
+        if (!isConnected || !penSupportedByHost) return
+
+        touchScope.launch {
+            try {
+                socket?.getOutputStream()?.let { out ->
+                    out.write(PenProtocol.encode(action, x, y, pressure))
                     out.flush()
                 }
             } catch (_: Exception) {
@@ -658,6 +698,7 @@ class StreamClient(
 
     fun disconnect() {
         isConnected = false
+        penSupportedByHost = false
         cleanup()
         onConnectionStatus?.invoke(false)
         Log.d(TAG, "Disconnected")
