@@ -44,4 +44,20 @@ class PreferencesManager(
     var connectionMode: ConnectionMode
         get() = ConnectionMode.fromName(prefs.getString("connection_mode", null))
         set(value) = prefs.edit().putString("connection_mode", value.name).apply()
+
+    var penPressureCalibration: PenPressureCalibration
+        get() =
+            PenPressureCalibration.validated(
+                minimum = prefs.getFloat("pen_pressure_minimum", PenPressureCalibration.DEFAULT_MINIMUM),
+                maximum = prefs.getFloat("pen_pressure_maximum", PenPressureCalibration.DEFAULT_MAXIMUM),
+                gamma = prefs.getFloat("pen_pressure_gamma", PenPressureCalibration.DEFAULT_GAMMA),
+            )
+        set(value) {
+            val calibration = PenPressureCalibration.validated(value.minimum, value.maximum, value.gamma)
+            prefs.edit()
+                .putFloat("pen_pressure_minimum", calibration.minimum)
+                .putFloat("pen_pressure_maximum", calibration.maximum)
+                .putFloat("pen_pressure_gamma", calibration.gamma)
+                .apply()
+        }
 }

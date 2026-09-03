@@ -534,13 +534,14 @@ class StreamClient(
         x: Float,
         y: Float,
         pressure: Float,
+        calibration: PenPressureCalibration = PenPressureCalibration.DEFAULT,
     ) {
         if (!isConnected || !penSupportedByHost) return
 
         touchScope.launch {
             try {
                 socket?.getOutputStream()?.let { out ->
-                    out.write(PenProtocol.encode(action, x, y, pressure))
+                    out.write(PenProtocol.encode(action, x, y, pressure, calibration))
                     out.flush()
                 }
             } catch (_: Exception) {

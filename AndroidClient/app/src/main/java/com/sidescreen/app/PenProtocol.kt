@@ -13,7 +13,6 @@ object PenProtocol {
     const val ACTION_UP = 2
 
     private const val PACKET_SIZE = 15
-
     fun capabilityAdvertisement(): ByteArray = byteArrayOf(MESSAGE_PEN_CAPABILITY.toByte())
 
     /**
@@ -24,6 +23,7 @@ object PenProtocol {
         x: Float,
         y: Float,
         pressure: Float,
+        calibration: PenPressureCalibration = PenPressureCalibration.DEFAULT,
     ): ByteArray {
         require(action in ACTION_DOWN..ACTION_UP) { "Invalid pen action: $action" }
         require(x.isFinite() && y.isFinite() && pressure.isFinite()) {
@@ -36,7 +36,7 @@ object PenProtocol {
             put(0) // Reserved for future pen flags.
             putFloat(x.coerceIn(0f, 1f))
             putFloat(y.coerceIn(0f, 1f))
-            putFloat(pressure.coerceIn(0f, 1f))
+            putFloat(calibration.map(pressure))
         }.array()
     }
 }

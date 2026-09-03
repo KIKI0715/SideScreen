@@ -868,25 +868,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case .move:
             postPenMouse(.leftMouseDragged, at: point, pressure: event.pressure)
         case .up:
-            postPenMouse(.leftMouseUp, at: point, pressure: nil)
+            postPenMouse(.leftMouseUp, at: point, pressure: 0)
         }
     }
 
-    private func postPenMouse(_ type: CGEventType, at point: CGPoint, pressure: Float?) {
-        guard let event = CGEvent(
-            mouseEventSource: eventSource,
-            mouseType: type,
-            mouseCursorPosition: point,
-            mouseButton: .left
-        ) else { return }
-
-        if let pressure {
-            event.setDoubleValueField(.mouseEventPressure, value: Double(pressure))
+    private func postPenMouse(_ type: CGEventType, at point: CGPoint, pressure: Float) {
+        let events = PenPointerEvent.makeStrokeEvents(
+            source: eventSource,
+            type: type,
+            point: point,
+            pressure: pressure
+        )
+        for event in events {
+            event.post(tap: .cghidEventTap)
         }
-        if type == .leftMouseDown {
-            event.setIntegerValueField(.mouseEventClickState, value: 1)
-        }
-        event.post(tap: .cghidEventTap)
     }
 
     // MARK: - 1-Finger Gesture State Machine

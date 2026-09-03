@@ -1,11 +1,13 @@
 package com.sidescreen.app
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Dialog
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.SurfaceTexture
@@ -42,6 +44,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.util.Locale
 
 private fun mainDiag(msg: String) = DiagLog.log("MA", msg)
 
@@ -51,8 +54,26 @@ class MainActivity : AppCompatActivity() {
     private val cameraPerm by lazy { CameraPermissionManager(this) }
     private lateinit var binding: ActivityMainBinding
     private lateinit var prefs: PreferencesManager
+    private var penPressureCalibration = PenPressureCalibration.DEFAULT
     private var videoDecoder: VideoDecoder? = null
     private var streamClient: StreamClient? = null
+    private lateinit var bluetoothPenSession: BluetoothPenSession
+    private val bluetoothPenListener: (BluetoothPenSession.Snapshot) -> Unit = { snapshot ->
+        runOnUiThread {
+            if (::binding.isInitialized) {
+                binding.bluetoothPenStatus.text = when (snapshot.state) {
+                    BluetoothPenSession.State.CONNECTED ->
+                        "Bluetooth pen: Connected to ${snapshot.deviceName ?: "Mac"}"
+                    BluetoothPenSession.State.CONNECTING -> "Bluetooth pen: Connecting…"
+                    BluetoothPenSession.State.REGISTERING -> "Bluetooth pen: Registering…"
+                    BluetoothPenSession.State.READY -> "Bluetooth pen: Ready; connect from the Mac"
+                    BluetoothPenSession.State.DISCONNECTED -> "Bluetooth pen: Disconnected"
+                    BluetoothPenSession.State.FAILED -> "Bluetooth pen: Setup required"
+                    BluetoothPenSession.State.IDLE -> "Bluetooth pen: Not connected"
+                }
+            }
+        }
+    }
 
     /** In-flight code-pairing attempt (issue #35); cancelled when its dialog closes. */
     private var pairingJob: Job? = null
@@ -85,6 +106,8 @@ class MainActivity : AppCompatActivity() {
 
         DiagLog.init(applicationContext)
         prefs = PreferencesManager(this)
+        penPressureCalibration = prefs.penPressureCalibration
+        bluetoothPenSession = BluetoothPenSession(this)
 
         // Allow rotation based on device sensor when not connected
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
@@ -111,11 +134,26 @@ class MainActivity : AppCompatActivity() {
         setupUI()
         setupDraggableOverlay()
         setupSettingsButton()
+        setupBluetoothPen()
         restoreOverlayPosition()
         restoreSettingsButtonPosition()
         startChecklistUpdates()
         setupModeToggle()
         setupWirelessController()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+        ) {
+            bluetoothPenSession.start()
+        }
+    }
+
+    override fun onStop() {
+        bluetoothPenSession.close()
+        super.onStop()
     }
 
     private fun setupModeToggle() {
@@ -371,6 +409,18 @@ class MainActivity : AppCompatActivity() {
             handleTouch(view, event)
             true
         }
+        val penHoverListener = View.OnGenericMotionListener { view, event ->
+            if (event.pointerCount > 0 &&
+                event.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS &&
+                bluetoothPenSession.isConnected
+            ) {
+                handleBluetoothPen(view, event)
+            } else {
+                false
+            }
+        }
+        binding.surfaceView.setOnGenericMotionListener(penHoverListener)
+        binding.textureView.setOnGenericMotionListener(penHoverListener)
     }
 
     private fun setupUI() {
@@ -411,8 +461,74 @@ class MainActivity : AppCompatActivity() {
             binding.showAdvanced.text = if (advancedVisible) "Hide Advanced Settings" else "Advanced Settings"
         }
 
+        setupPenPressureCalibrationControls()
+
         // Initial status
         updateStatus("Ready to connect")
+    }
+
+    private fun setupPenPressureCalibrationControls() {
+        renderPenPressureCalibration(penPressureCalibration)
+
+        val saveCalibration = {
+            penPressureCalibration =
+                PenPressureCalibration.validated(
+                    minimum = binding.minimumPressureSlider.value,
+                    maximum = binding.maximumPressureSlider.value,
+                    gamma = binding.pressureCurveSlider.value,
+                )
+            prefs.penPressureCalibration = penPressureCalibration
+            updatePenPressureLabels(penPressureCalibration)
+        }
+
+        binding.minimumPressureSlider.addOnChangeListener { _, _, fromUser ->
+            if (fromUser) saveCalibration()
+        }
+        binding.maximumPressureSlider.addOnChangeListener { _, _, fromUser ->
+            if (fromUser) saveCalibration()
+        }
+        binding.pressureCurveSlider.addOnChangeListener { _, _, fromUser ->
+            if (fromUser) saveCalibration()
+        }
+        binding.resetPenPressureButton.setOnClickListener {
+            penPressureCalibration = PenPressureCalibration.DEFAULT
+            prefs.penPressureCalibration = penPressureCalibration
+            renderPenPressureCalibration(penPressureCalibration)
+        }
+    }
+
+    private fun setupBluetoothPen() {
+        bluetoothPenSession.addListener(bluetoothPenListener)
+        binding.bluetoothPenSetupButton.setOnClickListener {
+            startActivity(Intent(this, BluetoothPenSetupActivity::class.java))
+        }
+
+        val canConnect =
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+        if (!canConnect) {
+            binding.bluetoothPenStatus.text = "Bluetooth pen: Tap setup to grant permission"
+        }
+    }
+
+    private fun renderPenPressureCalibration(calibration: PenPressureCalibration) {
+        binding.minimumPressureSlider.value = calibration.minimum
+        binding.maximumPressureSlider.value = calibration.maximum
+        binding.pressureCurveSlider.value = calibration.gamma
+        updatePenPressureLabels(calibration)
+    }
+
+    private fun updatePenPressureLabels(calibration: PenPressureCalibration) {
+        binding.minimumPressureValue.text = "${(calibration.minimum * 100).toInt()}%"
+        binding.maximumPressureValue.text = "${(calibration.maximum * 100).toInt()}%"
+        val response =
+            when {
+                calibration.gamma < 0.95f -> "Softer"
+                calibration.gamma > 1.05f -> "Firmer"
+                else -> "Linear"
+            }
+        binding.pressureCurveValue.text =
+            String.format(Locale.US, "%.2f · %s", calibration.gamma, response)
     }
 
     private fun showError(message: String) {
@@ -1467,11 +1583,26 @@ class MainActivity : AppCompatActivity() {
         view: View,
         event: MotionEvent,
     ) {
-        if (streamClient?.penSupportedByHost == true &&
-            event.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS
+        val isStylus = event.pointerCount > 0 && event.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS
+        when (
+            PenInputRouter.destinations(
+                isStylus = isStylus,
+                bluetoothConnected = bluetoothPenSession.isConnected,
+                networkPenSupported = streamClient?.penSupportedByHost == true,
+            ).single()
         ) {
-            handlePen(view, event)
-            return
+            PenInputRouter.Destination.BLUETOOTH_HID -> {
+                if (handleBluetoothPen(view, event)) return
+                if (streamClient?.penSupportedByHost == true) {
+                    handlePen(view, event)
+                    return
+                }
+            }
+            PenInputRouter.Destination.NETWORK_PEN -> {
+                handlePen(view, event)
+                return
+            }
+            PenInputRouter.Destination.NETWORK_TOUCH -> Unit
         }
 
         val rawX = event.x / view.width.toFloat()
@@ -1542,7 +1673,46 @@ class MainActivity : AppCompatActivity() {
                 else -> return
             }
 
-        streamClient?.sendPen(action, x, y, event.pressure)
+        streamClient?.sendPen(action, x, y, event.pressure, penPressureCalibration)
+    }
+
+    private fun handleBluetoothPen(
+        view: View,
+        event: MotionEvent,
+    ): Boolean {
+        if (event.pointerCount == 0 || view.width <= 0 || view.height <= 0) return false
+        val pointerIndex = event.actionIndex.coerceIn(0, event.pointerCount - 1)
+        if (event.getToolType(pointerIndex) != MotionEvent.TOOL_TYPE_STYLUS) return false
+
+        val phase = when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN,
+            MotionEvent.ACTION_MOVE -> BluetoothPenInput.Phase.CONTACT
+
+            MotionEvent.ACTION_UP,
+            MotionEvent.ACTION_HOVER_ENTER,
+            MotionEvent.ACTION_HOVER_MOVE -> BluetoothPenInput.Phase.HOVER
+
+            MotionEvent.ACTION_CANCEL,
+            MotionEvent.ACTION_OUTSIDE,
+            MotionEvent.ACTION_HOVER_EXIT -> BluetoothPenInput.Phase.OUT_OF_RANGE
+
+            else -> return false
+        }
+
+        val rawX = event.getX(pointerIndex) / view.width.toFloat()
+        val rawY = event.getY(pointerIndex) / view.height.toFloat()
+        val normalizedX = if (displayFlipHorizontal) 1f - rawX else rawX
+        val normalizedY = if (displayFlipVertical) 1f - rawY else rawY
+        val report = BluetoothPenInput.report(
+            phase = phase,
+            x = normalizedX * view.width,
+            y = normalizedY * view.height,
+            width = view.width,
+            height = view.height,
+            pressure = event.getPressure(pointerIndex),
+            calibration = penPressureCalibration,
+        )
+        return bluetoothPenSession.send(report)
     }
 
     private fun applyRotation(
@@ -1603,6 +1773,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        bluetoothPenSession.removeListener(bluetoothPenListener)
         super.onDestroy()
         stopChecklistUpdates()
         cleanup()

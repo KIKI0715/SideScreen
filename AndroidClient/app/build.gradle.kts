@@ -4,8 +4,15 @@ plugins {
 }
 
 val appVersion = rootProject.file("../VERSION").readText().trim()
-val versionParts = appVersion.split(".")
-val computedVersionCode = versionParts[0].toInt() * 10000 + versionParts[1].toInt() * 100 + versionParts[2].toInt()
+val versionMatch = requireNotNull(
+    Regex("""^(\d+)\.(\d+)\.(\d+)(?:-modified\.(\d+))?$""").matchEntire(appVersion)
+) { "VERSION must use MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-modified.BUILD" }
+val (major, minor, patch, modifiedBuild) = versionMatch.destructured
+val computedVersionCode =
+    major.toInt() * 1_000_000 +
+        minor.toInt() * 10_000 +
+        patch.toInt() * 100 +
+        modifiedBuild.ifEmpty { "0" }.toInt()
 
 android {
     namespace = "com.sidescreen.app"

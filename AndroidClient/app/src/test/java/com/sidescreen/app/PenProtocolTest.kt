@@ -33,7 +33,53 @@ class PenProtocolTest {
         val payload = ByteBuffer.wrap(packet).order(ByteOrder.LITTLE_ENDIAN)
         assertEquals(0.25f, payload.getFloat(3))
         assertEquals(0.75f, payload.getFloat(7))
-        assertEquals(0.5f, payload.getFloat(11))
+        assertEquals(PenPressureCalibration.DEFAULT.map(0.5f), payload.getFloat(11))
+    }
+
+    @Test
+    fun observedMaximumPressureEncodesAsFullPressure() {
+        val packet =
+            PenProtocol.encode(
+                action = PenProtocol.ACTION_MOVE,
+                x = 0.5f,
+                y = 0.5f,
+                pressure = 0.95f,
+            )
+
+        val payload = ByteBuffer.wrap(packet).order(ByteOrder.LITTLE_ENDIAN)
+        assertEquals(1f, payload.getFloat(11), 0.0001f)
+    }
+
+    @Test
+    fun configuredMinimumPressureEncodesAsZero() {
+        val calibration = PenPressureCalibration.validated(0.1f, 0.9f, 1f)
+        val packet =
+            PenProtocol.encode(
+                action = PenProtocol.ACTION_MOVE,
+                x = 0.5f,
+                y = 0.5f,
+                pressure = 0.1f,
+                calibration = calibration,
+            )
+
+        val payload = ByteBuffer.wrap(packet).order(ByteOrder.LITTLE_ENDIAN)
+        assertEquals(0f, payload.getFloat(11), 0.0001f)
+    }
+
+    @Test
+    fun responseCurveChangesMidrangePressure() {
+        val calibration = PenPressureCalibration.validated(0f, 1f, 0.5f)
+        val packet =
+            PenProtocol.encode(
+                action = PenProtocol.ACTION_MOVE,
+                x = 0.5f,
+                y = 0.5f,
+                pressure = 0.5f,
+                calibration = calibration,
+            )
+
+        val payload = ByteBuffer.wrap(packet).order(ByteOrder.LITTLE_ENDIAN)
+        assertEquals(0.7071f, payload.getFloat(11), 0.0001f)
     }
 
     @Test

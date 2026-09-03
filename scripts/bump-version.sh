@@ -8,16 +8,25 @@ VERSION_FILE="$ROOT_DIR/VERSION"
 CURRENT_VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
 echo "Current version: $CURRENT_VERSION"
 
-IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+if [[ "$CURRENT_VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-modified\.([0-9]+))?$ ]]; then
+    MAJOR="${BASH_REMATCH[1]}"
+    MINOR="${BASH_REMATCH[2]}"
+    PATCH="${BASH_REMATCH[3]}"
+    MODIFIED_BUILD="${BASH_REMATCH[5]:-0}"
+else
+    echo "Invalid VERSION: $CURRENT_VERSION"
+    exit 1
+fi
 
-case "${1:-patch}" in
-    major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
-    minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
-    patch) PATCH=$((PATCH + 1)) ;;
-    *) echo "Usage: $0 [major|minor|patch]"; exit 1 ;;
+case "${1:-modified}" in
+    major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0; MODIFIED_BUILD=1 ;;
+    minor) MINOR=$((MINOR + 1)); PATCH=0; MODIFIED_BUILD=1 ;;
+    patch) PATCH=$((PATCH + 1)); MODIFIED_BUILD=1 ;;
+    modified) MODIFIED_BUILD=$((MODIFIED_BUILD + 1)) ;;
+    *) echo "Usage: $0 [modified|major|minor|patch]"; exit 1 ;;
 esac
 
-NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+NEW_VERSION="$MAJOR.$MINOR.$PATCH-modified.$MODIFIED_BUILD"
 
 # Only update VERSION file - everything else reads from it:
 #   - build.gradle.kts reads ../VERSION at build time

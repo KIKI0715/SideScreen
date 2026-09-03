@@ -185,4 +185,4 @@ jobs:
             artifacts/macos-dmg/*.dmg
             artifacts/android-apk/*.apk
           draft: false
-          prerelease: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-modified.') }}

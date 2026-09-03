@@ -12,9 +12,19 @@ let package = Package(
     products: [
         .executable(
             name: "SideScreen",
-            targets: ["SideScreen"])
+            targets: ["SideScreen"]),
+        .executable(
+            name: "SideScreenVirtualPenProbe",
+            targets: ["SideScreenVirtualPenProbe"])
     ],
     targets: [
+        .target(
+            name: "VirtualPenSupport",
+            dependencies: [],
+            path: "VirtualPenSupport/Sources",
+            linkerSettings: [
+                .linkedFramework("IOKit")
+            ]),
         .executableTarget(
             name: "SideScreen",
             dependencies: [],
@@ -27,7 +37,7 @@ let package = Package(
             ]),
         .testTarget(
             name: "SideScreenTests",
-            dependencies: ["SideScreen"],
+            dependencies: ["SideScreen", "VirtualPenSupport"],
             path: "Tests/SideScreenTests",
             cSettings: [
                 .unsafeFlags(["-I", "Sources"])
@@ -35,6 +45,17 @@ let package = Package(
             swiftSettings: [
                 .unsafeFlags(["-Xcc", "-fmodule-map-file=Sources/module.modulemap"])
             ]
-        )
+        ),
+        .executableTarget(
+            name: "SideScreenVirtualPenProbe",
+            dependencies: ["VirtualPenSupport"],
+            path: "VirtualPenProbe/Sources",
+            linkerSettings: [
+                .linkedFramework("CoreHID")
+            ]),
+        .testTarget(
+            name: "VirtualPenSupportTests",
+            dependencies: ["VirtualPenSupport"],
+            path: "VirtualPenSupport/Tests")
     ]
 )
